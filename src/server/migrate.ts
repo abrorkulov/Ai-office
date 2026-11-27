@@ -1,3 +1,6 @@
+// Neon на Vercel даёт и пул соединений (DATABASE_URL), и прямое подключение: DDL миграций надёжнее без пула
+if (process.env.DATABASE_URL_UNPOOLED) process.env.DATABASE_URL = process.env.DATABASE_URL_UNPOOLED;
+
 import { closeDb, runMigrations } from "./db/client";
 
 /** npm run db:migrate — накатывает миграции на DATABASE_URL. */

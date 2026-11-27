@@ -30,6 +30,8 @@ const nextConfig: NextConfig = {
   cacheComponents: true,
   partialPrefetching: true,
   poweredByHeader: false,
+  // только для next dev: показать проект с телефона или ноутбука в той же сети Wi-Fi
+  allowedDevOrigins: ["192.168.*.*", "10.*.*.*"],
   serverExternalPackages: ["@electric-sql/pglite", "pg"],
   // SQL-миграции читаются с диска — кладём их в серверный бандл.
   outputFileTracingIncludes: { "/api/**/*": ["./drizzle/**/*"] },
