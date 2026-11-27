@@ -8,7 +8,7 @@ const { runs, staff, tasks, notes } = schema;
 export class RunLimitError extends Error {}
 
 /** Ставит работу в очередь. Дневной лимит считается в той же транзакции под блокировкой строки сотрудника. */
-export async function enqueueRun(tx: Tx, r: { orgId: string; staffId: string; taskId?: string; trigger: "task" | "chat" | "schedule" | "followup"; prompt: string; trusted: string }) {
+export async function enqueueRun(tx: Tx, r: { orgId: string; staffId: string; taskId?: string; threadId?: string; trigger: "task" | "chat" | "schedule" | "followup" | "inbox"; prompt: string; trusted: string }) {
   const [s] = await tx.select({ limit: staff.dailyRunLimit, enabled: staff.enabled, kind: staff.kind, archived: staff.archivedAt }).from(staff).where(eq(staff.id, r.staffId)).for("update");
   if (!s || s.archived || s.kind !== "ai") throw new RunLimitError("ИИ-сотрудник не найден");
   if (!s.enabled) throw new RunLimitError("Сотрудник на паузе");

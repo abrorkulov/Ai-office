@@ -9,6 +9,9 @@ const schema = z.object({
   ENCRYPTION_KEY: z.string().optional(),
   CRON_SECRET: z.string().min(24).optional(),
   APP_URL: z.url().optional(),
+  RESEND_API_KEY: z.string().min(10).optional(),
+  /** Отправитель писем, например: Штат <noreply@example.com> (домен подтверждён в Resend) */
+  MAIL_FROM: z.string().min(3).max(200).optional(),
   TRUST_PROXY: z.enum(["true", "false"]).optional(),
   DEMO_ENABLED: z.enum(["true", "false"]).optional(),
   WORKER_INLINE: z.enum(["true", "false"]).optional(),

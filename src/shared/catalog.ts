@@ -42,12 +42,15 @@ export const TOOLS = {
   site_status: { label: "Проверять сайты", hint: "Результаты мониторинга доступности", write: false },
   add_monitor: { label: "Ставить сайты на мониторинг", hint: "Регулярные проверки доступности", write: true },
   draft_message: { label: "Готовить письма", hint: "Черновик на проверку. Сам ничего не отправляет", write: true },
+  reply_client: { label: "Отвечать клиентам в мессенджере", hint: "Ответ уходит только после одобрения человека", write: true, external: true },
   team_status: { label: "Видеть загрузку команды", hint: "Кто чем занят и кто свободен", write: false },
   delegate_task: { label: "Поручать работу ИИ-коллегам", hint: "Ставит задачу и сразу запускает её", write: true },
   task_progress: { label: "Следить за поручениями", hint: "Статус и результаты розданных задач", write: false },
   add_task_note: { label: "Писать в обсуждение задачи", hint: "Комментарий в задаче", write: true },
 } as const;
 export type ToolName = keyof typeof TOOLS;
+/** Действие уходит за пределы компании: одобряет только человек, автономия не действует. */
+export const isExternal = (n: string) => Object.hasOwn(TOOLS, n) && "external" in TOOLS[n as ToolName];
 
 export interface Template {
   id: string;

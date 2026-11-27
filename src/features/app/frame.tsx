@@ -6,7 +6,7 @@ import { Suspense, useEffect, useState, type ComponentType } from "react";
 import { LayoutGroup, motion } from "motion/react";
 import * as Menu from "@radix-ui/react-dropdown-menu";
 import * as Dialog from "@radix-ui/react-dialog";
-import { BookOpen, Building2, CheckCheck, ChevronsUpDown, CircleDollarSign, Code2, Contact, Inbox, LogOut, Menu as MenuIcon, Plus, Search, Settings, SquareCheckBig, Users, X } from "lucide-react";
+import { BarChart3, BookOpen, Building2, CheckCheck, ChevronsUpDown, CircleDollarSign, Code2, Contact, Inbox, LogOut, Menu as MenuIcon, Plus, Search, Settings, SquareCheckBig, Users, X } from "lucide-react";
 import clsx from "clsx";
 import { api } from "@/shared/api";
 import { PRESENCE, type Presence } from "@/shared/catalog";
@@ -33,6 +33,7 @@ const GROUPS: { title?: string; items: Item[] }[] = [
   { title: "Компания", items: [
     { href: "/app/crm", label: "Клиенты", icon: Contact },
     { href: "/app/knowledge", label: "Знания", icon: BookOpen },
+    { href: "/app/reports", label: "Отчёты", icon: BarChart3, admin: true },
     { href: "/app/usage", label: "Расходы ИИ", icon: CircleDollarSign, admin: true },
     { href: "/app/settings", label: "Настройки", icon: Settings },
   ] },

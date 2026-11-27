@@ -4,6 +4,7 @@ import { schema, systemDb, tenant } from "../db/client";
 import { decryptSecret } from "../security/crypto";
 import { logEvent } from "../modules/events";
 import { anthropicProvider, demoProvider, openAiProvider, ProviderError, type Provider, type ToolOutcome } from "./providers";
+import { isExternal } from "@/shared/catalog";
 import { afterChildDone, RunLimitError } from "./queue";
 import { execute, executeInTx, prepareCall, toolDefs, ToolError, urlsIn, type ToolContext } from "./tools";
 
@@ -107,7 +108,7 @@ async function loop(orgId: string, runId: string) {
   const allowed = snapshot.tools.filter((t) => person.tools.includes(t));
   let transcript = run.transcript.length ? run.transcript : provider.start(run.prompt);
   const ctx: ToolContext = {
-    orgId, staffId: person.id, staffName: person.name, demo, runId, taskId: run.taskId, delegated: 0,
+    orgId, staffId: person.id, staffName: person.name, demo, runId, taskId: run.taskId, threadId: run.threadId, delegated: 0,
     trustedText: `${run.trusted}\n${person.instructions}`,
     seenUrls: new Set(urlsIn(JSON.stringify(run.transcript.length ? extractLinks(run.transcript) : ""))),
   };
@@ -151,7 +152,8 @@ async function loop(orgId: string, runId: string) {
     let ordered: ToolOutcome[] = r.calls.map((c) => ({ id: c.id, ...(outcomes[c.id] ?? { content: "", isError: false }) }));
     if (ask.length) {
       // Любое действие записывается до исполнения: после сбоя процесса оно не выполнится дважды.
-      const auto = person.autonomy === "auto";
+      // сообщения наружу (клиенту в мессенджер) всегда ждут человека, даже у самостоятельного сотрудника
+      const auto = person.autonomy === "auto" && ask.every((a) => !isExternal(a.tool));
       const alive = await tenant(orgId, async (tx) => {
         const ok = await tx
           .update(runs)

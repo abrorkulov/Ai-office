@@ -30,7 +30,7 @@ export function AuthShell({ title, text, children, foot }: { title: string; text
 }
 
 /** Отправка формы: ошибки полей показываются под полями, общая — над кнопкой. */
-function useForm<T>(send: (v: T) => Promise<unknown>, done: string) {
+function useForm<T>(send: (v: T) => Promise<unknown>, done: string | null) {
   const [busy, setBusy] = useState(false), [error, setError] = useState(""), [fields, setFields] = useState<Record<string, string[]>>({});
   const submit = async (v: T) => {
     setBusy(true);
@@ -38,7 +38,8 @@ function useForm<T>(send: (v: T) => Promise<unknown>, done: string) {
     setFields({});
     try {
       await send(v);
-      openFresh(done);
+      if (done) openFresh(done);
+      else setBusy(false);
     } catch (e) {
       if (e instanceof ApiError && Object.keys(e.fields).length) setFields(e.fields);
       else setError(e instanceof Error ? e.message : "Что-то пошло не так");
@@ -50,13 +51,16 @@ function useForm<T>(send: (v: T) => Promise<unknown>, done: string) {
 const Alert = ({ text }: { text: string }) => (text ? <p role="alert" className="rounded-md bg-bad-soft px-3.5 py-2.5 text-sm text-bad">{text}</p> : null);
 
 export function LoginForm({ demo }: { demo: boolean }) {
-  const [v, set] = useState({ email: "", password: "" });
-  const f = useForm<typeof v>((x) => api.post("/auth/login", x), "/app");
+  const [v, set] = useState({ email: "", password: "", code: "" });
+  const f = useForm<typeof v>((x) => api.post("/auth/login", x.code ? x : { email: x.email, password: x.password }), "/app");
+  // сервер просит второй фактор только после верного пароля
+  const needCode = !!f.err("code") || !!v.code;
   return (
     <AuthShell title="Вход" foot={<>Компании ещё нет? <Link href="/register" className="font-medium text-brand">Создать</Link></>}>
       <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); void f.submit(v); }}>
         <Field label="Email" error={f.err("email")}>{(p) => <Input {...p} type="email" autoComplete="email" required autoFocus value={v.email} onChange={(e) => set({ ...v, email: e.target.value })} />}</Field>
-        <Field label="Пароль" error={f.err("password")} hint="Забыли? Попросите владельца компании выдать ссылку для нового пароля">{(p) => <Input {...p} type="password" autoComplete="current-password" required value={v.password} onChange={(e) => set({ ...v, password: e.target.value })} />}</Field>
+        <Field label="Пароль" error={f.err("password")} hint={<Link href="/forgot" className="hover:text-ink">Забыли пароль?</Link>}>{(p) => <Input {...p} type="password" autoComplete="current-password" required value={v.password} onChange={(e) => set({ ...v, password: e.target.value })} />}</Field>
+        {needCode && <Field label="Код из приложения" error={f.err("code")} hint="Или один из резервных кодов">{(p) => <Input {...p} inputMode="numeric" autoComplete="one-time-code" autoFocus maxLength={20} value={v.code} onChange={(e) => set({ ...v, code: e.target.value })} />}</Field>}
         <Alert text={f.error} />
         <Button look="primary" size="lg" type="submit" busy={f.busy} className="w-full">Войти</Button>
       </form>
@@ -141,6 +145,22 @@ export function JoinForm() {
         <Field label="Пароль" error={f.err("password")} hint="Не короче 10 символов">{(p) => <Input {...p} type="password" required autoComplete="new-password" value={v.password} onChange={on("password")} />}</Field>
         <Alert text={f.error} />
         <Button look="primary" size="lg" type="submit" busy={f.busy} className="w-full">Войти в команду</Button>
+      </form>
+    </AuthShell>
+  );
+}
+
+export function ForgotForm() {
+  const [email, setEmail] = useState(""), [sent, setSent] = useState(false);
+  const f = useForm<string>(async (e) => { await api.post("/auth/forgot", { email: e }); setSent(true); }, null);
+  if (sent)
+    return <AuthShell title="Проверьте почту" text={`Если ${email} зарегистрирован, на него придёт ссылка для нового пароля. Она действует час.`} foot={<Link href="/login" className="font-medium text-brand">Вернуться ко входу</Link>}>{null}</AuthShell>;
+  return (
+    <AuthShell title="Восстановление пароля" text="Пришлём ссылку для нового пароля на почту." foot={<Link href="/login" className="font-medium text-brand">Вспомнили? Войти</Link>}>
+      <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); void f.submit(email); }}>
+        <Field label="Email" error={f.err("email")}>{(p) => <Input {...p} type="email" autoComplete="email" required autoFocus value={email} onChange={(e) => setEmail(e.target.value)} />}</Field>
+        <Alert text={f.error} />
+        <Button look="primary" size="lg" type="submit" busy={f.busy} className="w-full">Отправить ссылку</Button>
       </form>
     </AuthShell>
   );

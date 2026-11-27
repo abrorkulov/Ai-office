@@ -162,7 +162,7 @@ export function DraftsPanel({ staffId }: { staffId: string }) {
 }
 
 const RUN: Record<Run["status"], [string, "ok" | "warn" | "bad" | "brand" | "plain"]> = { queued: ["В очереди", "plain"], running: ["Выполняется", "brand"], waiting: ["Ждёт решения", "warn"], succeeded: ["Готово", "ok"], failed: ["Не получилось", "bad"], cancelled: ["Остановлено", "plain"] };
-const TRIGGER: Record<Run["trigger"], string> = { chat: "переписка", task: "задача", schedule: "по расписанию", followup: "сбор итога" };
+const TRIGGER: Record<Run["trigger"], string> = { chat: "переписка", task: "задача", schedule: "по расписанию", followup: "сбор итога", inbox: "сообщение клиента" };
 
 export function HistoryPanel({ staffId }: { staffId: string }) {
   const runs = useRuns(staffId);

@@ -12,6 +12,11 @@ export const users = pgTable("users", {
   email: text("email").notNull().unique(),
   name: text("name").notNull(),
   passwordHash: text("password_hash").notNull(),
+  /** Двухфакторный вход: секрет зашифрован, резервные коды хранятся только хэшами. */
+  totpEnc: text("totp_enc"),
+  totpPendingEnc: text("totp_pending_enc"),
+  totpLastStep: integer("totp_last_step").notNull().default(0),
+  recoveryHashes: jsonb("recovery_hashes").$type<string[]>().notNull().default([]),
   createdAt: created(),
 });
 
@@ -78,6 +83,8 @@ export const passwordResets = pgTable(
     tokenHash: text("token_hash").primaryKey(),
     userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
     orgId: uuid("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+    /** Запрошен самим человеком по почте: владение адресом доказано, ограничение «одна компания» не нужно. */
+    selfService: boolean("self_service").notNull().default(false),
     expiresAt: ts("expires_at").notNull(),
     createdAt: created(),
   },
@@ -268,7 +275,9 @@ export const runs = pgTable(
     orgId: org(),
     staffId: uuid("staff_id").notNull(),
     taskId: uuid("task_id"),
-    trigger: text("trigger", { enum: ["task", "chat", "schedule", "followup"] }).notNull(),
+    trigger: text("trigger", { enum: ["task", "chat", "schedule", "followup", "inbox"] }).notNull(),
+    /** Переписка с клиентом, на которую отвечает эта работа. Ответить можно только в неё. */
+    threadId: uuid("thread_id"),
     status: text("status", { enum: ["queued", "running", "waiting", "succeeded", "failed", "cancelled"] }).notNull().default("queued"),
     prompt: text("prompt").notNull(),
     /** Только текст, написанный людьми: ссылки из него сотрудник может открывать. */
@@ -423,6 +432,80 @@ export const docs = pgTable(
     updatedAt: ts("updated_at").notNull().defaultNow(),
   },
   (t) => [unique("docs_org_id_uq").on(t.orgId, t.id), index("docs_org_idx").on(t.orgId, t.updatedAt), check("docs_title_len", sql`char_length(${t.title}) between 1 and 160`), check("docs_body_len", sql`char_length(${t.body}) <= 60000`)],
+);
+
+/** Внешние каналы связи с клиентами. Токен бота хранится зашифрованным ключом компании. */
+export const channels = pgTable(
+  "channels",
+  {
+    id: id(),
+    orgId: org(),
+    kind: text("kind", { enum: ["telegram"] }).notNull(),
+    /** Публичный адрес вебхука: случайный, по нему находится компания. */
+    hookId: text("hook_id").notNull().unique(),
+    /** Хэш секрета, который Telegram присылает в заголовке X-Telegram-Bot-Api-Secret-Token. */
+    hookSecretHash: text("hook_secret_hash").notNull(),
+    tokenEnc: text("token_enc").notNull(),
+    botName: text("bot_name").notNull(),
+    staffId: uuid("staff_id").notNull(),
+    enabled: boolean("enabled").notNull().default(true),
+    createdAt: created(),
+  },
+  (t) => [
+    unique("channels_org_id_uq").on(t.orgId, t.id),
+    unique("channels_org_kind_uq").on(t.orgId, t.kind),
+    foreignKey({ columns: [t.orgId, t.staffId], foreignColumns: [staff.orgId, staff.id], name: "channels_staff_fk" }).onDelete("cascade"),
+  ],
+);
+
+/** Переписка с одним клиентом в канале. */
+export const threads = pgTable(
+  "threads",
+  {
+    id: id(),
+    orgId: org(),
+    channelId: uuid("channel_id"),
+    /** Номер чата у мессенджера. */
+    externalId: text("external_id").notNull(),
+    name: text("name").notNull(),
+    contactId: uuid("contact_id"),
+    unread: integer("unread").notNull().default(0),
+    lastAt: ts("last_at").notNull().defaultNow(),
+    createdAt: created(),
+  },
+  (t) => [
+    unique("threads_org_id_uq").on(t.orgId, t.id),
+    unique("threads_chat_uq").on(t.orgId, t.channelId, t.externalId),
+    index("threads_org_idx").on(t.orgId, t.lastAt),
+    foreignKey({ columns: [t.orgId, t.channelId], foreignColumns: [channels.orgId, channels.id], name: "threads_channel_fk" }),
+  ],
+);
+
+/** Сообщения переписки. Исходящие сначала встают в очередь и отправляются фоновым обработчиком ровно один раз. */
+export const inbox = pgTable(
+  "inbox",
+  {
+    id: id(),
+    orgId: org(),
+    threadId: uuid("thread_id").notNull(),
+    direction: text("direction", { enum: ["in", "out"] }).notNull(),
+    authorName: text("author_name").notNull(),
+    text: text("text").notNull(),
+    status: text("status", { enum: ["received", "queued", "sending", "sent", "failed"] }).notNull(),
+    error: text("error").notNull().default(""),
+    /** Номер сообщения у мессенджера: повтор вебхука не создаст дубль. */
+    externalId: text("external_id"),
+    runId: uuid("run_id"),
+    createdAt: created(),
+    sentAt: ts("sent_at"),
+  },
+  (t) => [
+    index("inbox_thread_idx").on(t.orgId, t.threadId, t.createdAt),
+    uniqueIndex("inbox_external_uq").on(t.orgId, t.threadId, t.externalId),
+    index("inbox_outbox_idx").on(t.status, t.createdAt).where(sql`${t.status} = 'queued'`),
+    foreignKey({ columns: [t.orgId, t.threadId], foreignColumns: [threads.orgId, threads.id], name: "inbox_thread_fk" }).onDelete("cascade"),
+    check("inbox_text_len", sql`char_length(${t.text}) between 1 and 4096`),
+  ],
 );
 
 /** Журнал: лента компании и аудит. Роль компании может только добавлять записи. */

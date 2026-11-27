@@ -194,7 +194,7 @@ function Rig({ view, floor }: { view: View; floor: Floor }) {
 /** Подписи: обычные элементы страницы, положение обновляется без React. */
 function Labels({ staff, layer, onPick, view, floor }: { staff: StaffCard[]; layer: React.RefObject<HTMLDivElement | null>; onPick?: (seat: number) => void; view: View; floor: Floor }) {
   const { camera, size } = useThree();
-  const items = useRef<{ el: HTMLButtonElement; p: THREE.Vector3 }[]>([]);
+  const items = useRef<{ el: HTMLButtonElement; p: THREE.Vector3; w: number }[]>([]);
   const seat = view.mode === "all" ? null : view.seat, eyes = view.mode === "eyes";
   useEffect(() => {
     const root = layer.current;
@@ -216,7 +216,7 @@ function Labels({ staff, layer, onPick, view, floor }: { staff: StaffCard[]; lay
       el.onclick = () => onPick?.(s.seat!);
       root.append(el);
       const standing = s.status === "break";
-      return [{ el, p: place ? new THREE.Vector3(place.x, standing ? 1.95 : 1.52, place.z) : new THREE.Vector3(o.chair.x, 1.2, o.chair.z) }];
+      return [{ el, w: 0, p: place ? new THREE.Vector3(place.x, standing ? 1.95 : 1.52, place.z) : new THREE.Vector3(o.chair.x, 1.2, o.chair.z) }];
     });
     return () => {
       items.current.forEach((i) => i.el.remove());
@@ -225,11 +225,28 @@ function Labels({ staff, layer, onPick, view, floor }: { staff: StaffCard[]; lay
   }, [staff, layer, onPick, eyes, seat, floor]);
   const v = useMemo(() => new THREE.Vector3(), []);
   useFrame(() => {
-    for (const { el, p } of items.current) {
-      v.copy(p).project(camera);
+    // экранные позиции; соседние подписи не накладываются: нижняя остаётся, верхняя поднимается над ней
+    const shown: { el: HTMLButtonElement; x: number; y: number; w: number }[] = [];
+    for (const it of items.current) {
+      v.copy(it.p).project(camera);
       const on = v.z < 1 && Math.abs(v.x) < 1.1 && Math.abs(v.y) < 1.1;
-      el.style.display = on ? "" : "none";
-      if (on) el.style.transform = `translate(-50%, -100%) translate(${((v.x + 1) / 2) * size.width}px, ${((1 - v.y) / 2) * size.height}px)`;
+      it.el.style.display = on ? "" : "none";
+      if (!on) continue;
+      if (!it.w) it.w = it.el.offsetWidth || 80;
+      shown.push({ el: it.el, x: ((v.x + 1) / 2) * size.width, y: ((1 - v.y) / 2) * size.height, w: it.w });
+    }
+    shown.sort((a, b) => b.y - a.y);
+    const placed: { x: number; y: number; w: number }[] = [];
+    const H = 24;
+    for (const l of shown) {
+      let y = l.y;
+      for (let k = 0; k < 6; k++) {
+        const hit = placed.find((q) => Math.abs(q.x - l.x) < (q.w + l.w) / 2 + 4 && Math.abs(q.y - y) < H);
+        if (!hit) break;
+        y = hit.y - H;
+      }
+      placed.push({ x: l.x, y, w: l.w });
+      l.el.style.transform = `translate(-50%, -100%) translate(${l.x}px, ${y}px)`;
     }
   });
   return null;

@@ -16,6 +16,22 @@ CREATE TABLE "approvals" (
 	CONSTRAINT "approvals_call_uq" UNIQUE("run_id","call_id")
 );
 --> statement-breakpoint
+CREATE TABLE "channels" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"org_id" uuid NOT NULL,
+	"kind" text NOT NULL,
+	"hook_id" text NOT NULL,
+	"hook_secret_hash" text NOT NULL,
+	"token_enc" text NOT NULL,
+	"bot_name" text NOT NULL,
+	"staff_id" uuid NOT NULL,
+	"enabled" boolean DEFAULT true NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "channels_hook_id_unique" UNIQUE("hook_id"),
+	CONSTRAINT "channels_org_id_uq" UNIQUE("org_id","id"),
+	CONSTRAINT "channels_org_kind_uq" UNIQUE("org_id","kind")
+);
+--> statement-breakpoint
 CREATE TABLE "checks" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"org_id" uuid NOT NULL,
@@ -101,6 +117,22 @@ CREATE TABLE "events" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE "inbox" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"org_id" uuid NOT NULL,
+	"thread_id" uuid NOT NULL,
+	"direction" text NOT NULL,
+	"author_name" text NOT NULL,
+	"text" text NOT NULL,
+	"status" text NOT NULL,
+	"error" text DEFAULT '' NOT NULL,
+	"external_id" text,
+	"run_id" uuid,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"sent_at" timestamp with time zone,
+	CONSTRAINT "inbox_text_len" CHECK (char_length("inbox"."text") between 1 and 4096)
+);
+--> statement-breakpoint
 CREATE TABLE "invites" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"org_id" uuid NOT NULL,
@@ -175,6 +207,7 @@ CREATE TABLE "password_resets" (
 	"token_hash" text PRIMARY KEY NOT NULL,
 	"user_id" uuid NOT NULL,
 	"org_id" uuid NOT NULL,
+	"self_service" boolean DEFAULT false NOT NULL,
 	"expires_at" timestamp with time zone NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
@@ -191,6 +224,7 @@ CREATE TABLE "runs" (
 	"staff_id" uuid NOT NULL,
 	"task_id" uuid,
 	"trigger" text NOT NULL,
+	"thread_id" uuid,
 	"status" text DEFAULT 'queued' NOT NULL,
 	"prompt" text NOT NULL,
 	"trusted" text DEFAULT '' NOT NULL,
@@ -293,11 +327,29 @@ CREATE TABLE "tasks" (
 	CONSTRAINT "tasks_points_ck" CHECK ("tasks"."points" is null or "tasks"."points" between 0 and 100)
 );
 --> statement-breakpoint
+CREATE TABLE "threads" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"org_id" uuid NOT NULL,
+	"channel_id" uuid,
+	"external_id" text NOT NULL,
+	"name" text NOT NULL,
+	"contact_id" uuid,
+	"unread" integer DEFAULT 0 NOT NULL,
+	"last_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "threads_org_id_uq" UNIQUE("org_id","id"),
+	CONSTRAINT "threads_chat_uq" UNIQUE("org_id","channel_id","external_id")
+);
+--> statement-breakpoint
 CREATE TABLE "users" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"email" text NOT NULL,
 	"name" text NOT NULL,
 	"password_hash" text NOT NULL,
+	"totp_enc" text,
+	"totp_pending_enc" text,
+	"totp_last_step" integer DEFAULT 0 NOT NULL,
+	"recovery_hashes" jsonb DEFAULT '[]'::jsonb NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "users_email_unique" UNIQUE("email")
 );
@@ -306,6 +358,8 @@ ALTER TABLE "approvals" ADD CONSTRAINT "approvals_org_id_organizations_id_fk" FO
 ALTER TABLE "approvals" ADD CONSTRAINT "approvals_decided_by_users_id_fk" FOREIGN KEY ("decided_by") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "approvals" ADD CONSTRAINT "approvals_run_fk" FOREIGN KEY ("org_id","run_id") REFERENCES "public"."runs"("org_id","id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "approvals" ADD CONSTRAINT "approvals_staff_fk" FOREIGN KEY ("org_id","staff_id") REFERENCES "public"."staff"("org_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "channels" ADD CONSTRAINT "channels_org_id_organizations_id_fk" FOREIGN KEY ("org_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "channels" ADD CONSTRAINT "channels_staff_fk" FOREIGN KEY ("org_id","staff_id") REFERENCES "public"."staff"("org_id","id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "checks" ADD CONSTRAINT "checks_org_id_organizations_id_fk" FOREIGN KEY ("org_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "checks" ADD CONSTRAINT "checks_monitor_fk" FOREIGN KEY ("org_id","monitor_id") REFERENCES "public"."monitors"("org_id","id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "connections" ADD CONSTRAINT "connections_org_id_organizations_id_fk" FOREIGN KEY ("org_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -316,6 +370,8 @@ ALTER TABLE "deals" ADD CONSTRAINT "deals_owner_fk" FOREIGN KEY ("org_id","owner
 ALTER TABLE "docs" ADD CONSTRAINT "docs_org_id_organizations_id_fk" FOREIGN KEY ("org_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "docs" ADD CONSTRAINT "docs_author_id_users_id_fk" FOREIGN KEY ("author_id") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "events" ADD CONSTRAINT "events_org_id_organizations_id_fk" FOREIGN KEY ("org_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "inbox" ADD CONSTRAINT "inbox_org_id_organizations_id_fk" FOREIGN KEY ("org_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "inbox" ADD CONSTRAINT "inbox_thread_fk" FOREIGN KEY ("org_id","thread_id") REFERENCES "public"."threads"("org_id","id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "invites" ADD CONSTRAINT "invites_org_id_organizations_id_fk" FOREIGN KEY ("org_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "invites" ADD CONSTRAINT "invites_created_by_users_id_fk" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "memberships" ADD CONSTRAINT "memberships_org_id_organizations_id_fk" FOREIGN KEY ("org_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -343,6 +399,8 @@ ALTER TABLE "tasks" ADD CONSTRAINT "tasks_assignee_fk" FOREIGN KEY ("org_id","as
 ALTER TABLE "tasks" ADD CONSTRAINT "tasks_parent_fk" FOREIGN KEY ("org_id","parent_id") REFERENCES "public"."tasks"("org_id","id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "tasks" ADD CONSTRAINT "tasks_delegator_fk" FOREIGN KEY ("org_id","delegator_id") REFERENCES "public"."staff"("org_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "tasks" ADD CONSTRAINT "tasks_sprint_fk" FOREIGN KEY ("org_id","sprint_id") REFERENCES "public"."sprints"("org_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "threads" ADD CONSTRAINT "threads_org_id_organizations_id_fk" FOREIGN KEY ("org_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "threads" ADD CONSTRAINT "threads_channel_fk" FOREIGN KEY ("org_id","channel_id") REFERENCES "public"."channels"("org_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "approvals_org_status_idx" ON "approvals" USING btree ("org_id","status","created_at");--> statement-breakpoint
 CREATE INDEX "checks_monitor_idx" ON "checks" USING btree ("org_id","monitor_id","at");--> statement-breakpoint
 CREATE INDEX "contacts_org_idx" ON "contacts" USING btree ("org_id","updated_at");--> statement-breakpoint
@@ -351,6 +409,9 @@ CREATE INDEX "docs_org_idx" ON "docs" USING btree ("org_id","updated_at");--> st
 CREATE INDEX "events_org_idx" ON "events" USING btree ("org_id","created_at");--> statement-breakpoint
 CREATE INDEX "events_staff_idx" ON "events" USING btree ("org_id","staff_id","created_at");--> statement-breakpoint
 CREATE INDEX "events_task_idx" ON "events" USING btree ("org_id","task_id","created_at");--> statement-breakpoint
+CREATE INDEX "inbox_thread_idx" ON "inbox" USING btree ("org_id","thread_id","created_at");--> statement-breakpoint
+CREATE UNIQUE INDEX "inbox_external_uq" ON "inbox" USING btree ("org_id","thread_id","external_id");--> statement-breakpoint
+CREATE INDEX "inbox_outbox_idx" ON "inbox" USING btree ("status","created_at") WHERE "inbox"."status" = 'queued';--> statement-breakpoint
 CREATE INDEX "invites_org_idx" ON "invites" USING btree ("org_id");--> statement-breakpoint
 CREATE INDEX "memberships_user_idx" ON "memberships" USING btree ("user_id");--> statement-breakpoint
 CREATE INDEX "messages_staff_idx" ON "messages" USING btree ("org_id","staff_id","created_at");--> statement-breakpoint
@@ -368,4 +429,5 @@ CREATE INDEX "staff_due_idx" ON "staff" USING btree ("next_run_at") WHERE "staff
 CREATE INDEX "tasks_org_status_idx" ON "tasks" USING btree ("org_id","status","updated_at");--> statement-breakpoint
 CREATE INDEX "tasks_assignee_idx" ON "tasks" USING btree ("org_id","assignee_id");--> statement-breakpoint
 CREATE INDEX "tasks_parent_idx" ON "tasks" USING btree ("org_id","parent_id");--> statement-breakpoint
-CREATE INDEX "tasks_sprint_idx" ON "tasks" USING btree ("org_id","sprint_id");
+CREATE INDEX "tasks_sprint_idx" ON "tasks" USING btree ("org_id","sprint_id");--> statement-breakpoint
+CREATE INDEX "threads_org_idx" ON "threads" USING btree ("org_id","last_at");

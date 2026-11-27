@@ -11,7 +11,7 @@ import { useDocs, useStaff, useTasks } from "./data";
 type Row = { id: string; group: string; label: string; hint?: string; href: string; avatar?: string };
 const PAGES: Row[] = [
   ["Сегодня", "/app"], ["Решения", "/app/approvals"], ["Задачи", "/app/tasks"], ["3D-офис: первый этаж", "/app/office"], ["3D-офис: второй этаж", "/app/office?floor=2"],
-  ["Разработка", "/app/dev"], ["Команда", "/app/team"], ["Клиенты", "/app/crm"], ["Знания", "/app/knowledge"], ["Новый документ", "/app/knowledge?new=1"], ["Расходы ИИ", "/app/usage"], ["Подключить модель ИИ", "/app/settings?tab=models"], ["Ссылка для команды", "/app/settings?tab=people"], ["Настройки", "/app/settings"],
+  ["Разработка", "/app/dev"], ["Команда", "/app/team"], ["Клиенты", "/app/crm"], ["Знания", "/app/knowledge"], ["Отчёты", "/app/reports"], ["Новый документ", "/app/knowledge?new=1"], ["Расходы ИИ", "/app/usage"], ["Подключить модель ИИ", "/app/settings?tab=models"], ["Ссылка для команды", "/app/settings?tab=people"], ["Настройки", "/app/settings"],
 ].map(([label, href]) => ({ id: href, group: "Разделы", label, href }));
 
 /** Быстрый переход: Ctrl+K открывает поиск по разделам, людям и задачам. */

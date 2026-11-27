@@ -2,7 +2,7 @@ import "server-only";
 import { TEMPLATES, type AvatarId, type DealStage } from "@/shared/catalog";
 import { schema, type Tx } from "../db/client";
 
-const { staff, contacts, deals, tasks, runs, approvals, messages, monitors, checks, events, notes, sprints, docs } = schema;
+const { staff, contacts, deals, tasks, runs, approvals, messages, monitors, checks, events, notes, sprints, docs, channels, threads, inbox } = schema;
 
 const ago = (minutes: number) => new Date(Date.now() - minutes * 60_000);
 const DAY = 1440;
@@ -109,6 +109,17 @@ export async function seedDemo(tx: Tx, orgId: string) {
     { orgId, folder: "Разработка", authorName: "Илья", title: "Как мы выпускаем релизы", createdAt: ago(30 * DAY), updatedAt: ago(4 * DAY),
       body: "1. Задача попадает в спринт с оценкой в очках.\n2. Код проходит ревью одного коллеги.\n3. Релиз по четвергам до 16:00, после — только исправления ошибок.\n4. Артём прогоняет автотесты корзины и оплаты перед каждым релизом.\n5. Если релиз сломал оплату — откатываем сразу, разбираемся потом." },
   ]);
+
+  // Telegram: бот подключён, отвечает поддержка. Токена нет — в пробной компании наружу ничего не уходит.
+  const [ch] = await tx.insert(channels).values({ orgId, kind: "telegram", hookId: `demo-${crypto.randomUUID().replace(/-/g, "")}`, hookSecretHash: "0".repeat(64), tokenEnc: "demo", botName: "studio_sever_bot", staffId: id.support, enabled: false }).returning({ id: channels.id });
+  const chats: { name: string; mins: number; log: [string, string, string][] }[] = [
+    { name: "Анна Котова", mins: 14, log: [["in", "Анна Котова", "Здравствуйте! Можно оплатить сразу за год? Есть скидка?"], ["out", "Тимур", "Здравствуйте, Анна! Да, при оплате за год скидка 15%. Тариф «Команда» выйдет 151 980 ₽ вместо 178 800 ₽. Пришлите реквизиты — подготовим счёт."], ["in", "Анна Котова", "Отлично, реквизиты отправлю завтра"]] },
+    { name: "Дмитрий", mins: 95, log: [["in", "Дмитрий", "Подскажите, а можно вернуть деньги, если не подойдёт?"], ["out", "Тимур", "Да, в течение 14 дней после первой оплаты, если вы ещё не подключали свои модели. Решение о возврате принимает менеджер, я передам ему вашу просьбу."]] },
+  ];
+  for (const c of chats) {
+    const [th] = await tx.insert(threads).values({ orgId, channelId: ch.id, externalId: String(100000 + c.mins), name: c.name, unread: c.log.at(-1)![0] === "in" ? 1 : 0, lastAt: ago(c.mins) }).returning({ id: threads.id });
+    await tx.insert(inbox).values(c.log.map(([direction, authorName, text], i) => ({ orgId, threadId: th.id, direction: direction as "in" | "out", authorName, text, status: (direction === "in" ? "received" : "sent") as "received" | "sent", externalId: direction === "in" ? `m${i}` : null, createdAt: ago(c.mins + (c.log.length - i) * 4), sentAt: direction === "out" ? ago(c.mins + (c.log.length - i) * 4) : null })));
+  }
 
   // История запусков за две недели
   const keys = people.map((p) => p.key);

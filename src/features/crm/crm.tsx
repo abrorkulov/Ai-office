@@ -8,23 +8,24 @@ import { api } from "@/shared/api";
 import { DEAL_STAGES, type DealStage } from "@/shared/catalog";
 import { ago, money } from "@/shared/format";
 import { Button, buttonClass, Empty, Failed, Field, Input, Loading, Modal, PageHead, Portrait, Select, Tabs, Textarea } from "@/ui/kit";
+import { Inbox } from "./inbox";
 import { useAction, useContacts, useDeals, useMe, useStaff, type Contact, type Deal } from "../app/data";
 
 const STAGES = Object.keys(DEAL_STAGES) as DealStage[];
 
 export function CrmPage() {
-  const [tab, setTab] = useState<"deals" | "contacts">("deals");
+  const [tab, setTab] = useState<"deals" | "contacts" | "inbox">("deals");
   const me = useMe().data;
   const [deal, setDeal] = useState<Deal | { contactId: string } | "new" | null>(null), [contact, setContact] = useState<Contact | "new" | null>(null);
   return (
     <>
       <PageHead title="Клиенты">
-        {me && me.role !== "member" && <a href={`/api/export?what=${tab === "deals" ? "deals" : "contacts"}`} download className={buttonClass("ghost")}><Download size={15} /> CSV</a>}
+        {me && me.role !== "member" && <a href={`/api/export?what=${tab === "contacts" ? "contacts" : "deals"}`} download className={buttonClass("ghost")}><Download size={15} /> CSV</a>}
         <Button onClick={() => setContact("new")}><Plus size={17} /> Клиент</Button>
         <Button look="primary" onClick={() => setDeal("new")}><Plus size={17} /> Сделка</Button>
       </PageHead>
-      <Tabs value={tab} onChange={setTab} items={[{ id: "deals", label: "Сделки" }, { id: "contacts", label: "Все клиенты" }]} />
-      <div className="mt-5">{tab === "deals" ? <Pipeline onOpen={setDeal} /> : <section className="rounded-lg border border-line bg-panel"><ContactsTable onOpen={setContact} /></section>}</div>
+      <Tabs value={tab} onChange={setTab} items={[{ id: "deals", label: "Сделки" }, { id: "contacts", label: "Все клиенты" }, { id: "inbox", label: "Переписка" }]} />
+      <div className="mt-5">{tab === "deals" ? <Pipeline onOpen={setDeal} /> : tab === "inbox" ? <Inbox /> : <section className="rounded-lg border border-line bg-panel"><ContactsTable onOpen={setContact} /></section>}</div>
       {deal && <DealForm deal={deal === "new" || !("id" in deal) ? null : deal} preset={deal !== "new" && !("id" in deal) ? deal.contactId : undefined} onClose={() => setDeal(null)} />}
       {contact && <ContactForm contact={contact === "new" ? null : contact} onClose={() => setContact(null)} onDeal={(d) => { setContact(null); setDeal(d); }} />}
     </>

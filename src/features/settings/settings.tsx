@@ -14,16 +14,18 @@ import type { mySessions } from "@/server/modules/accounts";
 import { Button, Empty, Failed, Field, IconButton, Input, Loading, Modal, PageHead, Panel, Select, Tabs, Tag } from "@/ui/kit";
 import { useAction, useConnections, useMe, usePeople, useStaff } from "../app/data";
 import clsx from "clsx";
+import { Channels } from "./channels";
 import { JoinLink } from "./join";
+import { TwoFactor } from "./twofa";
 
-type Tab = "models" | "people" | "company" | "security" | "audit";
+type Tab = "models" | "channels" | "people" | "company" | "security" | "audit";
 
 export function SettingsPage() {
   const me = useMe().data, params = useSearchParams();
   const [picked, setTab] = useState<Tab | null>(null);
   if (!me) return <Loading />;
   const admin = me.role !== "member";
-  const items: { id: Tab; label: string }[] = [...(admin ? [{ id: "models" as const, label: "Модели ИИ" }] : []), { id: "people", label: "Люди" }, ...(admin ? [{ id: "company" as const, label: "Компания" }] : []), { id: "security", label: "Безопасность" }, ...(admin ? [{ id: "audit" as const, label: "Журнал" }] : [])];
+  const items: { id: Tab; label: string }[] = [...(admin ? [{ id: "models" as const, label: "Модели ИИ" }, { id: "channels" as const, label: "Каналы" }] : []), { id: "people", label: "Люди" }, ...(admin ? [{ id: "company" as const, label: "Компания" }] : []), { id: "security", label: "Безопасность" }, ...(admin ? [{ id: "audit" as const, label: "Журнал" }] : [])];
   const asked = params.get("tab") as Tab | null;
   const tab = picked ?? (items.some((i) => i.id === asked) ? asked! : items[0].id);
   return (
@@ -32,6 +34,7 @@ export function SettingsPage() {
       <Tabs value={tab} onChange={setTab} items={items} />
       <div className="mt-6 max-w-4xl">
         {tab === "models" && <Models demo={me.demo} />}
+        {tab === "channels" && <Channels demo={me.demo} />}
         {tab === "people" && <PeopleTab />}
         {tab === "company" && <Company />}
         {tab === "security" && <Security />}
@@ -118,11 +121,11 @@ function PeopleTab() {
   const me = useMe().data!, people = usePeople();
   const [email, setEmail] = useState(""), [role, setRole] = useState("member"), [link, setLink] = useState<{ path: string; title: string; text: string } | null>(null);
   const admin = me.role !== "member";
-  const invite = useAction(() => api.post<{ path: string }>("/org/invites", { email, role }), { done: (r) => { setEmail(""); setLink({ path: r.path, title: "Приглашение готово", text: "Отправьте ссылку сами: писем сервис не рассылает. Она действует 7 дней и подходит только для этого email. Повторно показать её нельзя." }); }, refresh: ["people"] });
+  const invite = useAction(() => api.post<{ path: string; emailed: boolean }>("/org/invites", { email, role }), { done: (r) => { setLink({ path: r.path, title: r.emailed ? "Приглашение отправлено" : "Приглашение готово", text: r.emailed ? `Письмо ушло на ${email}. Если оно не дойдёт, передайте ссылку сами: она действует 7 дней и подходит только для этого адреса.` : "Отправьте ссылку сами: почта не настроена. Она действует 7 дней и подходит только для этого email. Повторно показать её нельзя." }); setEmail(""); }, refresh: ["people"] });
   const revoke = useAction((id: string) => api.del(`/org/invites/${id}`), { refresh: ["people"] });
   const remove = useAction((id: string) => api.del(`/org/people/${id}`), { done: "Доступ закрыт", refresh: ["people", "staff"] });
   const change = useAction((v: { id: string; role: string }) => api.patch(`/org/people/${v.id}`, { role: v.role }), { refresh: ["people"] });
-  const reset = useAction((id: string) => api.post<{ path: string }>(`/org/people/${id}/reset`), { done: (r) => setLink({ path: r.path, title: "Ссылка для нового пароля", text: "Передайте её человеку лично. Действует сутки и только один раз." }) });
+  const reset = useAction((id: string) => api.post<{ path: string; emailed: boolean }>(`/org/people/${id}/reset`), { done: (r) => setLink({ path: r.path, title: "Ссылка для нового пароля", text: r.emailed ? "Ссылка отправлена человеку на почту. Если письмо не дойдёт, передайте её лично. Действует сутки и только один раз." : "Передайте её человеку лично. Действует сутки и только один раз." }) });
   return (
     <div className="space-y-6">
       {admin && (
@@ -216,6 +219,7 @@ function Security() {
           <div><Button look="primary" type="submit" busy={save.isPending}>Сменить пароль</Button></div>
         </form>
       </Panel>
+      <TwoFactor demo={me.demo} />
       <Panel title="Где выполнен вход" flush action={(sessions.data?.length ?? 0) > 1 && <Button size="sm" onClick={() => out.mutate()}>Выйти на остальных</Button>}>
         {sessions.isPending ? <Loading rows={2} /> : <ul className="divide-y divide-line">{sessions.data?.map((s, i) => <li key={i} className="flex items-center justify-between gap-4 px-5 py-3 text-sm"><span>{browser(s.userAgent)}</span>{s.current ? <Tag tone="ok">Это устройство</Tag> : <span className="text-ink-3">{ago(s.lastSeenAt)}</span>}</li>)}</ul>}
       </Panel>

@@ -10,6 +10,8 @@ export class HttpError extends Error {
   constructor(
     public status: number,
     message: string,
+    /** Ошибки отдельных полей формы, например { code: ["Введите код"] }. */
+    public fields?: Record<string, string[]>,
   ) {
     super(message);
   }
@@ -124,7 +126,7 @@ export function route<B extends z.ZodType | undefined = undefined, A extends boo
     } catch (e) {
       unstable_rethrow(e);
       if (e instanceof z.ZodError) return json({ error: "Проверьте поля", fields: z.flattenError(e).fieldErrors }, { status: 400 });
-      if (e instanceof HttpError) return json({ error: e.message }, { status: e.status });
+      if (e instanceof HttpError) return json({ error: e.message, ...(e.fields ? { fields: e.fields } : {}) }, { status: e.status });
       const code = (e as { cause?: { code?: string }; code?: string })?.cause?.code ?? (e as { code?: string })?.code;
       if (code === "23505") return json({ error: "Такая запись уже есть" }, { status: 409 });
       if (code === "23503") return json({ error: "Связанная запись не найдена" }, { status: 409 });

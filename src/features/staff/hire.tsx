@@ -6,7 +6,7 @@ import { Check } from "lucide-react";
 import clsx from "clsx";
 import { api } from "@/shared/api";
 import { AVATARS, DEPARTMENTS, TEMPLATES, TOOLS, type AvatarId } from "@/shared/catalog";
-import { Button, Field, Input, Modal, Portrait } from "@/ui/kit";
+import { Button, Field, Input, Modal, Portrait, Select } from "@/ui/kit";
 import { useAction } from "../app/data";
 
 export function AvatarPicker({ value, onChange }: { value: string; onChange: (a: AvatarId) => void }) {
@@ -38,7 +38,8 @@ export function Hire({ onClose, seat, initial = "sales" }: { onClose: () => void
     <Modal open onClose={onClose} title="Нанять ИИ-сотрудника" wide>
       <form onSubmit={(e) => { e.preventDefault(); hire.mutate(); }}>
         <div className="grid gap-6 md:grid-cols-[240px_1fr]">
-          <ul className="space-y-0.5">
+          <Select aria-label="Должность" className="md:hidden" value={tpl} onChange={(e) => setTpl(e.target.value)}>{TEMPLATES.map((x) => <option key={x.id} value={x.id}>{x.title}</option>)}</Select>
+          <ul className="space-y-0.5 max-md:hidden">
             {TEMPLATES.map((x) => (
               <li key={x.id}>
                 <button type="button" aria-pressed={x.id === tpl} onClick={() => setTpl(x.id)} className={clsx("flex h-8 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-[13px]", x.id === tpl ? "bg-sunk font-medium text-ink ring-1 ring-inset ring-line" : "text-ink-2 hover:bg-ink/5 hover:text-ink")}>

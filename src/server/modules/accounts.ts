@@ -7,6 +7,8 @@ import { HttpError, notFound } from "../http/route";
 import { hashPassword, hashToken, newToken, verifyAgainstDummy, verifyPassword } from "../security/crypto";
 import { clearLimit, limit } from "../security/rate-limit";
 import { endOtherSessions, startSession, type Auth } from "../security/session";
+import { absolute, letter, mailEnabled, sendMail } from "../mail";
+import { checkSecondFactor } from "./twofa";
 import { byUser, logEvent } from "./events";
 import { seedDemo } from "./demo";
 import { freeSeat, seatLock } from "./staff";
@@ -24,7 +26,7 @@ export const passwordSchema = z
 const nameSchema = z.string().trim().min(1, "Заполните поле").max(80);
 
 export const registerSchema = z.object({ company: nameSchema, name: nameSchema, email: emailSchema, password: passwordSchema });
-export const loginSchema = z.object({ email: emailSchema, password: z.string().min(1).max(200) });
+export const loginSchema = z.object({ email: emailSchema, password: z.string().min(1).max(200), code: z.string().trim().max(20).optional() });
 export const inviteSchema = z.object({ email: emailSchema, role: z.enum(["admin", "member"]) });
 export const acceptSchema = z.object({ token: z.string().min(20).max(100), name: nameSchema, password: z.string().min(1).max(200) });
 export const passwordChangeSchema = z.object({ current: z.string().min(1).max(200), next: passwordSchema });
@@ -56,6 +58,10 @@ export async function login(i: z.infer<typeof loginSchema>, ip: string) {
     throw new HttpError(401, "Неверный email или пароль");
   }
   if (!(await verifyPassword(i.password, u.passwordHash))) throw new HttpError(401, "Неверный email или пароль");
+  if (u.totpEnc) {
+    if (!i.code) throw new HttpError(401, "Введите код из приложения", { code: ["Введите код из приложения-аутентификатора"] });
+    if (!(await checkSecondFactor(u.id, i.code))) throw new HttpError(401, "Неверный код", { code: ["Неверный код. Подождите новый или введите резервный"] });
+  }
   const [m] = await db.select({ orgId: memberships.orgId }).from(memberships).where(eq(memberships.userId, u.id)).orderBy(desc(memberships.createdAt)).limit(1);
   if (!m) throw new HttpError(403, "У вас больше нет доступа ни к одной компании");
   await clearLimit(key);
@@ -106,7 +112,9 @@ export async function createInvite(a: Auth, i: z.infer<typeof inviteSchema>) {
     await tx.insert(events).values({ ...byUser(a), type: "invite.created", subject: `Приглашение для ${i.email}`, audit: true });
   });
   // токен после # не попадает в логи серверов и заголовок Referer
-  return { path: `/invite#${token}` };
+  const path = `/invite#${token}`;
+  const emailed = mailEnabled() && (await sendMail(i.email, `Приглашение в «${a.orgName}»`, letter([`${a.userName} приглашает вас в компанию «${a.orgName}» в Штате.`, "Ссылка действует 7 дней. Если вы не ждали этого письма, просто удалите его."], { label: "Принять приглашение", url: absolute(path) })));
+  return { path, emailed };
 }
 
 export async function revokeInvite(a: Auth, id: string) {
@@ -204,7 +212,10 @@ export async function createPasswordReset(a: Auth, userId: string) {
     await tx.insert(passwordResets).values({ tokenHash: hashToken(token), userId, orgId: a.orgId, expiresAt: new Date(Date.now() + 864e5) });
     await tx.insert(events).values({ ...byUser(a), type: "member.reset", subject: "Выдана ссылка для нового пароля", audit: true });
   });
-  return { path: `/reset#${token}` };
+  const path = `/reset#${token}`;
+  const [u] = await db.select({ email: users.email }).from(users).where(eq(users.id, userId));
+  const emailed = mailEnabled() && !!u && (await sendMail(u.email, "Новый пароль для Штата", letter([`${a.userName} выдал(а) вам ссылку, чтобы задать новый пароль.`, "Ссылка действует сутки и срабатывает один раз."], { label: "Задать пароль", url: absolute(path) })));
+  return { path, emailed };
 }
 
 export async function resetPassword(token: string, password: string) {
@@ -215,10 +226,32 @@ export async function resetPassword(token: string, password: string) {
     if (!r) throw new HttpError(404, "Ссылка недействительна или истекла");
     // за время жизни ссылки человек мог вступить в другую компанию
     const all = await tx.select().from(memberships).where(eq(memberships.userId, r.userId));
-    if (all.length !== 1 || all[0].orgId !== r.orgId) throw new HttpError(404, "Ссылка недействительна или истекла");
+    if (!r.selfService && (all.length !== 1 || all[0].orgId !== r.orgId)) throw new HttpError(404, "Ссылка недействительна или истекла");
     await tx.update(users).set({ passwordHash }).where(eq(users.id, r.userId));
     await tx.delete(sessions).where(eq(sessions.userId, r.userId));
   });
+}
+
+export const forgotSchema = z.object({ email: z.email().max(200).transform((e) => e.toLowerCase()) });
+
+/**
+ * «Забыли пароль»: ссылка уходит на почту. Ответ одинаковый, есть аккаунт или нет,
+ * чтобы по нему нельзя было узнать, кто зарегистрирован.
+ */
+export async function requestPasswordReset(email: string) {
+  if (!mailEnabled()) throw new HttpError(503, "Восстановление по почте не настроено. Попросите владельца компании выдать ссылку");
+  if (!(await limit(`forgot:${email}`, 3, 3600))) return;
+  const db = await systemDb();
+  const [u] = await db.select({ id: users.id, email: users.email }).from(users).where(eq(users.email, email));
+  if (!u) return;
+  const [m] = await db.select({ orgId: memberships.orgId }).from(memberships).where(eq(memberships.userId, u.id)).limit(1);
+  if (!m) return;
+  const token = newToken();
+  await db.transaction(async (tx) => {
+    await tx.delete(passwordResets).where(eq(passwordResets.userId, u.id));
+    await tx.insert(passwordResets).values({ tokenHash: hashToken(token), userId: u.id, orgId: m.orgId, selfService: true, expiresAt: new Date(Date.now() + 3600_000) });
+  });
+  await sendMail(u.email, "Восстановление пароля", letter(["Кто-то, возможно вы, попросил сменить пароль в Штате.", "Ссылка действует час. Если это были не вы, ничего не делайте: пароль останется прежним."], { label: "Задать новый пароль", url: absolute(`/reset#${token}`) }));
 }
 
 /** Удаление компании со всеми данными. Требует пароль: чужая открытая вкладка этого не сделает. */

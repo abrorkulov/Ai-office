@@ -7,6 +7,7 @@ import { safeFetch } from "../security/safe-fetch";
 import { purgeSessions } from "../security/session";
 import { enqueueRun, RunLimitError } from "./queue";
 import { claimRun, processRun } from "./runner";
+import { sendOutbox } from "../modules/inbox";
 
 const { staff, monitors, checks, organizations } = schema;
 
@@ -18,6 +19,8 @@ export async function drainRuns(max = 4) {
       if (r) await processRun(r.orgId, r.id);
     }),
   );
+  // одобренные ответы клиентам уходят сразу после работы
+  await sendOutbox().catch((e) => console.error("[outbox]", e instanceof Error ? e.message : e));
 }
 
 async function enqueueScheduled() {
